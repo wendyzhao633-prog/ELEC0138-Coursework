@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile – Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card medium">
+        <div class="card-header">
+            <h1>My Profile</h1>
+            <p class="card-subtitle">Your personal information on record</p>
+        </div>
+
+        <!-- Alert area -->
+        <div id="msg" class="alert"></div>
+
+        <!-- Loading placeholder -->
+        <div id="loadingArea" class="loading">Loading profile…</div>
+
+        <!-- Profile data (hidden until loaded) -->
+        <div id="profileArea" style="display:none;">
+            <div class="info-grid">
+                <span class="info-label">Username</span>
+                <span class="info-value" id="pUsername">–</span>
+
+                <span class="info-label">Full Name</span>
+                <span class="info-value" id="pFullName">–</span>
+
+                <span class="info-label">Email</span>
+                <span class="info-value" id="pEmail">–</span>
+
+                <span class="info-label">Student ID</span>
+                <span class="info-value" id="pStudentId">–</span>
+
+                <span class="info-label">Role</span>
+                <span class="info-value">
+                    <span class="badge" id="pRoleBadge">–</span>
+                </span>
+            </div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 1.5rem;">
+            <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script>
+    // ----------------------------------------------------------------
+    // Shared auth helper (inline – avoids extra file dependency)
+    // ----------------------------------------------------------------
+
+    function getAuthHeaders() {
+        var token = localStorage.getItem("token");
+        if (!token) return null;
+        return {
+            "Content-Type":  "application/json",
+            "Authorization": "Bearer " + token,
+        };
+    }
+
+    function redirectToLogin(reason) {
+        Logger.logTokenMissing("/profile-page");
+        console.warn("[Profile] Redirect to login:", reason);
+        localStorage.clear();
+        window.location.href = "/login";
+    }
+
+    function showMsg(text, type) {
+        var el = document.getElementById("msg");
+        el.textContent = text;
+        el.className = "alert alert-" + type + " show";
+    }
+
+    // ----------------------------------------------------------------
+    // Profile page logic
+    // ----------------------------------------------------------------
+
+    (function init() {
+        var token      = localStorage.getItem("token");
+        var username   = localStorage.getItem("username");
+        var role       = localStorage.getItem("role");
+        var params     = new URLSearchParams(window.location.search);
+        var student_id = params.get("student_id") || localStorage.getItem("student_id");
+
+        if (!token || !username) {
+            redirectToLogin("no token");
+            return;
+        }
+
+        // Update header
+        document.getElementById("headerUser").textContent =
+            username + "  [" + (role || "?") + "]";
+
+        Logger.logPageVisit("Profile");
+
+        var headers = getAuthHeaders();
+
+        // Allow URL override first so the CW1 IDOR can be demonstrated
+        // directly by editing the address bar.
+        var url = student_id
+            ? "/profile?student_id=" + encodeURIComponent(student_id)
+            : "/me";
+
+        fetch(url, { method: "GET", headers: headers })
+            .then(function (res) {
+                if (res.status === 401 || res.status === 403) {
+                    redirectToLogin("token rejected (" + res.status + ")");
+                    return null;
+                }
+                return res.json().then(function (data) {
+                    return { status: res.status, data: data };
+                });
+            })
+            .then(function (resp) {
+                if (!resp) return; // redirected
+
+                if (resp.status !== 200 || resp.data.success === false) {
+                    // If /profile?student_id failed, fall back to /me
+                    if (student_id && url !== "/me") {
+                        return fetch("/me", { method: "GET", headers: headers })
+                            .then(function (r2) { return r2.json(); })
+                            .then(function (d2) { renderProfile(d2); });
+                    }
+                    var errMsg = (resp.data && resp.data.message)
+                        ? resp.data.message
+                        : "Failed to load profile";
+                    showMsg(errMsg, "error");
+                    document.getElementById("loadingArea").style.display = "none";
+                    Logger.logApiError(url, resp.status, errMsg);
+                    return;
+                }
+
+                renderProfile(resp.data);
+            })
+            .catch(function (err) {
+                showMsg("Network error: " + err.message, "error");
+                document.getElementById("loadingArea").style.display = "none";
+                Logger.logApiError(url, 0, err.message);
+            });
+    })();
+
+    /** Populate the profile card with data from the API */
+    function renderProfile(data) {
+        document.getElementById("loadingArea").style.display = "none";
+        document.getElementById("profileArea").style.display = "block";
+
+        document.getElementById("pUsername").textContent   = data.username   || "–";
+        document.getElementById("pFullName").textContent   = data.full_name  || "–";
+        document.getElementById("pEmail").textContent      = data.email      || "–";
+        document.getElementById("pStudentId").textContent  = data.student_id || "N/A";
+
+        var badge = document.getElementById("pRoleBadge");
+        badge.textContent = data.role || "–";
+        badge.className   = "badge badge-" + (data.role || "student");
+    }
+</script>
+</body>
+</html>

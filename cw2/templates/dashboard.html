@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card medium">
+        <div id="error-banner" class="alert"></div>
+
+        <div class="card-header">
+            <h1>Dashboard</h1>
+            <p class="card-subtitle" id="welcomeText">Welcome back!</p>
+        </div>
+
+        <div class="info-grid" style="margin-bottom: 1.5rem;">
+            <span class="info-label">Username</span>
+            <span class="info-value" id="infoUsername">-</span>
+
+            <span class="info-label">Role</span>
+            <span class="info-value">
+                <span class="badge" id="roleBadge">-</span>
+            </span>
+
+            <span class="info-label">Student ID</span>
+            <span class="info-value" id="infoStudentId">-</span>
+
+            <span class="info-label">Email</span>
+            <span class="info-value" id="infoEmail">-</span>
+        </div>
+
+        <hr class="divider" />
+
+        <h3 style="margin-bottom: 0.75rem; color: #4a5568;">Quick Navigation</h3>
+        <div class="nav-cards">
+            <a class="nav-card" href="/profile-page">
+                <span class="nav-icon">&#x1F464;</span>
+                <span class="nav-label">My Profile</span>
+            </a>
+
+            <a class="nav-card" href="/results-page">
+                <span class="nav-icon">&#x1F4CA;</span>
+                <span class="nav-label">View Results</span>
+            </a>
+
+            <a class="nav-card" href="/admin-page" id="adminCard"
+               style="display:none; border-color:#fefcbf;">
+                <span class="nav-icon">&#x2699;&#xFE0F;</span>
+                <span class="nav-label" style="color:#744210;">Admin Panel</span>
+            </a>
+
+            <div class="nav-card danger" id="logoutCard">
+                <span class="nav-icon">&#x1F6AA;</span>
+                <span class="nav-label">Logout</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script src="/static/auth.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        if (!Auth.requireAuth()) {
+            return;
+        }
+
+        function parseResponse(response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                return { status: response.status, data: data };
+            });
+        }
+
+        function applyUser(user) {
+            var role = user.role || "student";
+            document.getElementById("headerUser").textContent =
+                (user.username || "-") + "  [" + role + "]";
+
+            document.getElementById("welcomeText").textContent =
+                "Welcome back, " + (user.full_name || user.username || "user") + "!";
+
+            document.getElementById("infoUsername").textContent = user.username || "-";
+            document.getElementById("infoStudentId").textContent = user.student_id || "N/A";
+            document.getElementById("infoEmail").textContent = user.email || "-";
+
+            var badge = document.getElementById("roleBadge");
+            badge.textContent = role || "unknown";
+            badge.className = "badge badge-" + (role || "student");
+
+            if (role === "admin") {
+                document.getElementById("adminCard").style.display = "flex";
+            }
+        }
+
+        function loadUser() {
+            return Auth.authFetch("/me")
+                .then(parseResponse)
+                .then(function (resp) {
+                    if (resp.status !== 200) {
+                        Logger.logApiError("/me", resp.status, resp.data.message || "Failed to load current user");
+                        Auth.showBanner(resp.data.message || "Unable to load your profile summary.", "error");
+                        return;
+                    }
+
+                    var currentUser = resp.data || {};
+                    Auth.storeSession(Auth.getAccessToken(), currentUser);
+                    applyUser(currentUser);
+                })
+                .catch(function (error) {
+                    if (error.message !== "Unauthorized") {
+                        Logger.logApiError("/me", 0, error.message);
+                        Auth.showBanner("Network error while loading your dashboard.", "error");
+                    }
+                });
+        }
+
+        function warnAboutSession(secondsRemaining) {
+            Logger.logSessionExpiring(secondsRemaining);
+            Auth.showBanner("Session will expire soon. Please save your work and sign in again if needed.", "warning");
+        }
+
+        document.getElementById("logoutCard").addEventListener("click", function () {
+            var username = Auth.getUser().username;
+            Logger.logLogout(username);
+
+            Auth.authFetch("/logout", { method: "POST" })
+                .catch(function () {})
+                .finally(function () {
+                    Auth.clearSession();
+                    Auth.redirectToLogin("You have been logged out.", "success");
+                });
+        });
+
+        Logger.logPageVisit("Dashboard");
+        Auth.initSessionWatch({ onWarning: warnAboutSession });
+        loadUser();
+    })();
+</script>
+</body>
+</html>

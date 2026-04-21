@@ -1,0 +1,353 @@
+/* ============================================================
+   style.css – Student Grade Portal unified stylesheet
+   Clean, card-based layout suitable for coursework demonstration.
+   ============================================================ */
+
+/* Reset & base */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #f0f2f5;
+    color: #2d3748;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Typography ────────────────────────────────────────────── */
+h1, h2, h3 {
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.3rem; margin-bottom: 1rem; }
+h3 { font-size: 1.1rem; }
+
+p  { line-height: 1.6; }
+
+a  {
+    color: #3182ce;
+    text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+/* ── Page wrapper ──────────────────────────────────────────── */
+.page-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 2.5rem 1rem;
+    flex: 1;
+}
+
+/* ── Card ──────────────────────────────────────────────────── */
+.card {
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.10);
+    padding: 2rem 2.5rem;
+    width: 100%;
+    max-width: 500px;
+}
+
+.card.wide  { max-width: 860px; }
+.card.medium { max-width: 680px; }
+
+.card-header {
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #ebf0f7;
+    padding-bottom: 1rem;
+}
+
+.card-header h1,
+.card-header h2 {
+    margin-bottom: 0.25rem;
+}
+
+.card-subtitle {
+    color: #718096;
+    font-size: 0.9rem;
+}
+
+/* ── Site header / nav bar ─────────────────────────────────── */
+.site-header {
+    background: #1a365d;
+    color: #fff;
+    padding: 0.85rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.site-header .brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.02em;
+}
+
+.site-header .nav-user {
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
+/* ── Forms ─────────────────────────────────────────────────── */
+.form-group {
+    margin-bottom: 1.1rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.87rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 0.65rem 0.9rem;
+    border: 1.5px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.15s;
+    background: #f7fafc;
+}
+
+.form-group input:focus {
+    border-color: #3182ce;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(49,130,206,0.15);
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.btn {
+    display: inline-block;
+    padding: 0.6rem 1.25rem;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s, opacity 0.15s;
+    text-align: center;
+    text-decoration: none;
+}
+
+.btn:hover   { opacity: 0.88; text-decoration: none; }
+.btn:active  { transform: scale(0.98); }
+
+.btn-primary { background: #3182ce; color: #fff; }
+.btn-danger  { background: #e53e3e; color: #fff; }
+.btn-outline {
+    background: transparent;
+    border: 1.5px solid #3182ce;
+    color: #3182ce;
+}
+.btn-outline:hover { background: #ebf4ff; }
+.btn-secondary { background: #718096; color: #fff; }
+.btn-sm { padding: 0.4rem 0.85rem; font-size: 0.83rem; }
+.btn-full { width: 100%; padding: 0.75rem; font-size: 1rem; }
+
+/* Button row */
+.btn-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.25rem;
+}
+
+/* ── Alerts / Messages ─────────────────────────────────────── */
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    display: none; /* hidden by default, shown via JS */
+}
+
+.alert.show { display: block; }
+
+.alert-error   { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; }
+.alert-success { background: #f0fff4; color: #276749; border: 1px solid #68d391; }
+.alert-info    { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+.alert-warning { background: #fffaf0; color: #c05621; border: 1px solid #f6ad55; }
+
+/* ── Profile info grid ─────────────────────────────────────── */
+.info-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.5rem 1rem;
+    margin-top: 0.5rem;
+}
+
+.info-label {
+    font-weight: 600;
+    color: #718096;
+    font-size: 0.88rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding-top: 0.1rem;
+}
+
+.info-value {
+    color: #2d3748;
+    font-size: 0.95rem;
+}
+
+/* Role badge */
+.badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 99px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-admin   { background: #fefcbf; color: #744210; }
+.badge-student { background: #ebf8ff; color: #2b6cb0; }
+
+/* ── Tables ────────────────────────────────────────────────── */
+.table-wrapper {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+
+thead tr {
+    background: #edf2f7;
+    text-align: left;
+}
+
+thead th {
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #4a5568;
+    border-bottom: 2px solid #cbd5e0;
+}
+
+tbody tr {
+    border-bottom: 1px solid #e2e8f0;
+    transition: background 0.1s;
+}
+
+tbody tr:hover { background: #f7fafc; }
+
+tbody td {
+    padding: 0.65rem 0.9rem;
+    color: #2d3748;
+    vertical-align: middle;
+}
+
+/* Grade colouring */
+.grade-a  { color: #276749; font-weight: 700; }
+.grade-b  { color: #2b6cb0; font-weight: 700; }
+.grade-c  { color: #c05621; font-weight: 700; }
+.grade-d  { color: #c53030; font-weight: 700; }
+
+/* ── Dashboard nav cards ───────────────────────────────────── */
+.nav-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-top: 1.25rem;
+}
+
+.nav-card {
+    background: #f7fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.1rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.nav-card:hover {
+    border-color: #3182ce;
+    box-shadow: 0 2px 8px rgba(49,130,206,0.15);
+    text-decoration: none;
+    color: inherit;
+}
+
+.nav-card .nav-icon {
+    font-size: 1.8rem;
+}
+
+.nav-card .nav-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #3182ce;
+}
+
+.nav-card.danger .nav-label { color: #e53e3e; }
+.nav-card.danger { border-color: #fed7d7; }
+.nav-card.danger:hover { border-color: #e53e3e; }
+
+/* ── Divider ───────────────────────────────────────────────── */
+.divider {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 1.5rem 0;
+}
+
+/* ── Access denied box ─────────────────────────────────────── */
+.access-denied {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+.access-denied .denied-icon {
+    font-size: 3rem;
+    margin-bottom: 0.75rem;
+}
+
+/* ── Loading spinner ───────────────────────────────────────── */
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+    font-style: italic;
+}
+
+/* ── Responsive tweaks ─────────────────────────────────────── */
+@media (max-width: 600px) {
+    .card {
+        padding: 1.5rem 1.2rem;
+    }
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+    .btn-row {
+        flex-direction: column;
+    }
+    .btn-full-mobile {
+        width: 100%;
+    }
+}

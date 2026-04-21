@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CW2 Login - Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="login-page">
+<header class="site-header login-header">
+    <span class="brand">Student Grade Portal</span>
+</header>
+
+<div class="page-wrapper login-wrapper">
+    <div class="card login-card">
+        <section id="passwordStep">
+            <div class="card-header">
+                <h1>Sign In</h1>
+                <p class="card-subtitle">Enter your university credentials to continue</p>
+            </div>
+
+            <div id="msg" class="alert"></div>
+
+            <form id="loginForm" novalidate>
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input id="username" name="username" type="text" placeholder="Enter your username" autocomplete="username" />
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input id="password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" />
+                </div>
+
+                <button id="loginBtn" class="btn btn-primary btn-full" type="submit">Login</button>
+            </form>
+        </section>
+
+        <section id="mfaStep" class="hidden">
+            <div class="card-header">
+                <h1>MFA Verification</h1>
+                <p class="card-subtitle">Enter the 6 digit code from your authenticator to finish signing in.</p>
+            </div>
+
+            <div id="msgMfa" class="alert"></div>
+
+            <div class="mfa-meta">
+                <div><strong>Account</strong> <span id="mfaUser">-</span></div>
+                <div><strong>Role</strong> <span id="mfaRole">-</span></div>
+                <div><strong>Student ID</strong> <span id="mfaStudent">-</span></div>
+                <div><strong>Session expires in</strong> <span class="countdown" id="mfaCountdown">05:00</span></div>
+            </div>
+
+            <form id="mfaForm" novalidate>
+                <div class="form-group">
+                    <label for="otp">One-time passcode</label>
+                    <input id="otp" name="otp" class="otp-input" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6 digit code" autocomplete="one-time-code" />
+                </div>
+
+                <button id="mfaBtn" class="btn btn-primary btn-full" type="submit">Verify code</button>
+                <div class="btn-row">
+                    <button id="backToPasswordBtn" class="btn btn-outline" type="button">Back</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script src="/static/auth.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        var MAX_PASSWORD_FAILURES = 5;
+        var PASSWORD_FAILURE_KEY = "cw2_password_failures";
+        var loginForm = document.getElementById("loginForm");
+        var mfaForm = document.getElementById("mfaForm");
+        var msgBox = document.getElementById("msg");
+        var mfaMsgBox = document.getElementById("msgMfa");
+        var loginBtn = document.getElementById("loginBtn");
+        var mfaBtn = document.getElementById("mfaBtn");
+        var mfaCountdown = document.getElementById("mfaCountdown");
+        var passwordStep = document.getElementById("passwordStep");
+        var mfaStep = document.getElementById("mfaStep");
+        var activeCountdownTimer = null;
+
+        function parseResponse(response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                return { status: response.status, data: data };
+            });
+        }
+
+        function activeMsgBox() {
+            return passwordStep.classList.contains("hidden") ? mfaMsgBox : msgBox;
+        }
+
+        function showMsg(text, type) {
+            var target = activeMsgBox();
+            msgBox.textContent = "";
+            msgBox.className = "alert";
+            mfaMsgBox.textContent = "";
+            mfaMsgBox.className = "alert";
+            target.textContent = text;
+            target.className = "alert alert-" + (type || "info") + " show";
+        }
+
+        function hideMsg() {
+            msgBox.textContent = "";
+            msgBox.className = "alert";
+            mfaMsgBox.textContent = "";
+            mfaMsgBox.className = "alert";
+        }
+
+        function loadPasswordFailures() {
+            try {
+                return JSON.parse(window.sessionStorage.getItem(PASSWORD_FAILURE_KEY) || "{}");
+            } catch (_error) {
+                return {};
+            }
+        }
+
+        function savePasswordFailures(state) {
+            window.sessionStorage.setItem(PASSWORD_FAILURE_KEY, JSON.stringify(state));
+        }
+
+        function failureKey(username) {
+            return String(username || "").trim().toLowerCase();
+        }
+
+        function bumpPasswordFailure(username) {
+            var state = loadPasswordFailures();
+            var key = failureKey(username);
+            state[key] = Math.min((state[key] || 0) + 1, MAX_PASSWORD_FAILURES);
+            savePasswordFailures(state);
+            return state[key];
+        }
+
+        function resetPasswordFailure(username) {
+            var state = loadPasswordFailures();
+            delete state[failureKey(username)];
+            savePasswordFailures(state);
+        }
+
+        function formatDuration(totalSeconds) {
+            var safe = Math.max(0, Number(totalSeconds) || 0);
+            var minutes = Math.floor(safe / 60);
+            var seconds = safe % 60;
+            return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+        }
+
+        function updateStepUi(activeStep) {
+            Array.prototype.forEach.call(document.querySelectorAll(".step"), function (step) {
+                var name = step.getAttribute("data-step");
+                step.classList.toggle("is-active", name === activeStep);
+                step.classList.toggle("is-complete", activeStep === "mfa" && name === "password");
+                step.classList.toggle("is-complete", activeStep === "session" && (name === "password" || name === "mfa"));
+            });
+        }
+
+        function stopCountdown() {
+            window.clearInterval(activeCountdownTimer);
+            activeCountdownTimer = null;
+        }
+
+        function getPendingExpirySeconds(tempToken) {
+            var payload = Auth.decodeJwtPayload(tempToken);
+            if (!payload || !payload.exp) {
+                return null;
+            }
+            return Number(payload.exp);
+        }
+
+        function renderPendingUser(user) {
+            document.getElementById("mfaUser").textContent = (user.full_name || user.username || "-") + (user.username ? " (" + user.username + ")" : "");
+            document.getElementById("mfaRole").textContent = user.role || "-";
+            document.getElementById("mfaStudent").textContent = user.student_id || "N/A";
+        }
+
+        function showPasswordStep() {
+            stopCountdown();
+            passwordStep.classList.remove("hidden");
+            mfaStep.classList.add("hidden");
+            hideMsg();
+            document.getElementById("otp").value = "";
+        }
+
+        function showMfaStep(tempToken, user) {
+            renderPendingUser(user || {});
+            passwordStep.classList.add("hidden");
+            mfaStep.classList.remove("hidden");
+            hideMsg();
+            startCountdown(tempToken);
+            document.getElementById("otp").focus();
+        }
+
+        function startCountdown(tempToken) {
+            stopCountdown();
+            var expiry = getPendingExpirySeconds(tempToken);
+            if (!expiry) {
+                mfaCountdown.textContent = "05:00";
+                return;
+            }
+
+            function tick() {
+                var remaining = expiry - Math.floor(Date.now() / 1000);
+                mfaCountdown.textContent = formatDuration(remaining);
+                if (remaining <= 0) {
+                    stopCountdown();
+                    Auth.clearPendingMfa();
+                    showPasswordStep();
+                    showMsg("The MFA challenge expired. Please enter your password again.", "warning");
+                }
+            }
+
+            tick();
+            activeCountdownTimer = window.setInterval(tick, 1000);
+        }
+
+        function resumePendingMfaIfPresent() {
+            var pending = Auth.getPendingMfa();
+            if (!pending.temp_token) {
+                return false;
+            }
+            var expiry = getPendingExpirySeconds(pending.temp_token);
+            if (!expiry || expiry <= Math.floor(Date.now() / 1000)) {
+                Auth.clearPendingMfa();
+                return false;
+            }
+            showMfaStep(pending.temp_token, pending.user);
+            showMsg("Resume your MFA step to complete sign-in.", "info");
+            return true;
+        }
+
+        function handleLockout(data) {
+            var retrySeconds = Number(data.retry_after_seconds || 0);
+            var lockoutMessage = data.message || "Too many attempts. Please wait before trying again.";
+            if (retrySeconds > 0) {
+                lockoutMessage += " Retry in " + formatDuration(retrySeconds) + ".";
+            }
+            showMsg(lockoutMessage, "warning");
+        }
+
+        function handlePasswordFailure(username, message) {
+            var failureCount = bumpPasswordFailure(username);
+            var remaining = Math.max(0, MAX_PASSWORD_FAILURES - failureCount);
+            var suffix = remaining > 0
+                ? " " + remaining + " password attempt" + (remaining === 1 ? "" : "s") + " remaining before temporary lockout."
+                : " The next failed attempt will trigger a temporary lockout.";
+            showMsg((message || "Invalid credentials.") + suffix, remaining <= 1 ? "warning" : "error");
+        }
+
+        function persistSuccessfulSession(data) {
+            Auth.storeSession(data.token, data.user || {});
+        }
+
+        function restoreFlashMessage() {
+            var flash = Auth.consumeFlash();
+            if (flash && flash.message) {
+                showMsg(flash.message, flash.type || "info");
+            }
+        }
+
+        loginForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            hideMsg();
+
+            var username = document.getElementById("username").value.trim();
+            var password = document.getElementById("password").value;
+
+            if (!username || !password) {
+                showMsg("Please enter both username and password.", "error");
+                Logger.logLoginFailure(username || "(empty)", "Missing fields");
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = "Signing in...";
+
+            window.fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: username, password: password }),
+            })
+            .then(parseResponse)
+            .then(function (resp) {
+                var data = resp.data || {};
+
+                if (resp.status === 200 && data.success && data.mfa_required && data.temp_token) {
+                    resetPasswordFailure(username);
+                    Auth.storePendingMfa(data.temp_token, data.user || {});
+                    Logger.logMfaChallenge(username);
+                    showMfaStep(data.temp_token, data.user || {});
+                    showMsg(data.message || "Password verified. Enter your MFA code to continue.", "success");
+                    return;
+                }
+
+                if (resp.status === 401) {
+                    Logger.logLoginFailure(username, data.message || "Invalid credentials");
+                    handlePasswordFailure(username, data.message || "Invalid credentials.");
+                    return;
+                }
+
+                if (resp.status === 429) {
+                    Logger.logLoginFailure(username, data.message || "Too many attempts");
+                    handleLockout(data);
+                    return;
+                }
+
+                Logger.logApiError("/login", resp.status, data.message || "Password step failed");
+                showMsg(data.message || "Unable to complete password verification.", "error");
+            })
+            .catch(function (error) {
+                Logger.logApiError("/login", 0, error.message);
+                showMsg("Network error while contacting the server.", "error");
+            })
+            .finally(function () {
+                loginBtn.disabled = false;
+                loginBtn.textContent = "Login";
+            });
+        });
+
+        mfaForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            hideMsg();
+
+            var otp = document.getElementById("otp").value.replace(/\D/g, "").slice(0, 6);
+            var pending = Auth.getPendingMfa();
+
+            if (!pending.temp_token) {
+                showMsg("Your MFA session is missing. Start again from the password step.", "warning");
+                showPasswordStep();
+                return;
+            }
+
+            if (otp.length !== 6) {
+                showMsg("Enter a valid 6 digit MFA code.", "error");
+                return;
+            }
+
+            mfaBtn.disabled = true;
+            mfaBtn.textContent = "Verifying code...";
+
+            window.fetch("/login/mfa", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ temp_token: pending.temp_token, otp: otp }),
+            })
+            .then(parseResponse)
+            .then(function (resp) {
+                var data = resp.data || {};
+                var pendingUser = pending.user || {};
+                var username = pendingUser.username || "(pending-user)";
+
+                if (resp.status === 200 && data.success && data.token) {
+                    persistSuccessfulSession(data);
+                    Logger.logMfaSuccess(username);
+                    showMsg("Login successful. Redirecting to the dashboard...", "success");
+                    window.setTimeout(function () {
+                        window.location.href = "/dashboard";
+                    }, 700);
+                    return;
+                }
+
+                if (resp.status === 401) {
+                    Logger.logMfaFailure(username, data.message || "Invalid MFA code");
+                    if ((data.message || "").toLowerCase().indexOf("session") !== -1) {
+                        Auth.clearPendingMfa();
+                        showPasswordStep();
+                        showMsg(data.message || "The MFA session is no longer valid. Start again from password sign-in.", "warning");
+                        return;
+                    }
+                    showMsg(data.message || "Invalid MFA code.", "error");
+                    return;
+                }
+
+                Logger.logApiError("/login/mfa", resp.status, data.message || "MFA verification failed");
+                showMsg(data.message || "Unable to complete MFA verification.", "error");
+            })
+            .catch(function (error) {
+                Logger.logApiError("/login/mfa", 0, error.message);
+                showMsg("Network error while verifying the MFA code.", "error");
+            })
+            .finally(function () {
+                mfaBtn.disabled = false;
+                mfaBtn.textContent = "Complete sign-in";
+            });
+        });
+
+        document.getElementById("backToPasswordBtn").addEventListener("click", function () {
+            Auth.clearPendingMfa();
+            showPasswordStep();
+            hideMsg();
+            document.getElementById("password").value = "";
+            document.getElementById("password").focus();
+        });
+
+        document.getElementById("otp").addEventListener("input", function (event) {
+            event.target.value = event.target.value.replace(/\D/g, "").slice(0, 6);
+        });
+
+        if (Auth.getAccessToken()) {
+            window.location.href = "/dashboard";
+        } else {
+            restoreFlashMessage();
+            if (!resumePendingMfaIfPresent()) {
+                showPasswordStep();
+            }
+        }
+    })();
+</script>
+</body>
+</html>

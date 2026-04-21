@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel - Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal - Admin</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card wide">
+        <div id="error-banner" class="alert"></div>
+
+        <div id="accessDeniedArea" class="hidden">
+            <div class="access-denied">
+                <div class="denied-icon">&#x1F6AB;</div>
+                <h2>Access Denied</h2>
+                <p style="color:#718096; margin: 0.75rem 0 1.5rem;">
+                    You do not have permission to view this page.<br />
+                    Only administrators can access the Admin Panel.
+                </p>
+                <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+            </div>
+        </div>
+
+        <div id="adminArea" class="hidden">
+            <div class="card-header">
+                <h1>Admin Panel</h1>
+                <p class="card-subtitle">Manage all registered users</p>
+            </div>
+
+            <div id="msg" class="alert"></div>
+            <div id="loadingArea" class="loading">Loading user list...</div>
+
+            <div id="tableArea" class="hidden">
+                <h3 style="margin-bottom: 0.5rem;">
+                    Registered Users
+                    <span id="userCount" style="font-weight:400; font-size:0.88rem; color:#718096;"></span>
+                </h3>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Full Name</th>
+                                <th>Email</th>
+                                <th>Student ID</th>
+                                <th>Role</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: 1.5rem;">
+                <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script src="/static/auth.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        if (!Auth.requireAuth()) {
+            return;
+        }
+
+        var user = Auth.getUser();
+        var role = user.role || "student";
+        var msgBox = document.getElementById("msg");
+
+        function showMsg(text, type) {
+            msgBox.textContent = text;
+            msgBox.className = "alert alert-" + (type || "info") + " show";
+        }
+
+        function parseResponse(response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                return { status: response.status, data: data };
+            });
+        }
+
+        function escHtml(value) {
+            return String(value === null || value === undefined ? "" : value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        function renderUsers(users) {
+            document.getElementById("tableArea").classList.remove("hidden");
+            document.getElementById("userCount").textContent = " (" + users.length + " total)";
+
+            var tbody = document.getElementById("usersBody");
+            tbody.innerHTML = "";
+
+            users.forEach(function (item) {
+                var roleCls = item.role === "admin" ? "badge-admin" : "badge-student";
+                var actions = item.student_id
+                    ? "<a class='btn btn-link' href='/profile-page?student_id=" + encodeURIComponent(item.student_id) + "'>Profile</a> | " +
+                      "<a class='btn btn-link' href='/results-page?student_id=" + encodeURIComponent(item.student_id) + "'>Results</a>"
+                    : "<span style='color:#718096;'>N/A</span>";
+
+                var tr = document.createElement("tr");
+                tr.innerHTML =
+                    "<td>" + escHtml(item.id) + "</td>" +
+                    "<td><strong>" + escHtml(item.username || "-") + "</strong></td>" +
+                    "<td>" + escHtml(item.full_name || "-") + "</td>" +
+                    "<td>" + escHtml(item.email || "-") + "</td>" +
+                    "<td>" + escHtml(item.student_id || "N/A") + "</td>" +
+                    "<td><span class='badge " + roleCls + "'>" + escHtml(item.role || "-") + "</span></td>" +
+                    "<td>" + actions + "</td>";
+                tbody.appendChild(tr);
+            });
+        }
+
+        function showDeniedState() {
+            Logger.logAdminAccessAttempt(user.username, false);
+            document.getElementById("accessDeniedArea").classList.remove("hidden");
+        }
+
+        function loadUsers() {
+            Logger.logAdminAccessAttempt(user.username, true);
+            Logger.logPageVisit("Admin Panel");
+            document.getElementById("adminArea").classList.remove("hidden");
+
+            Auth.authFetch("/admin/users")
+                .then(parseResponse)
+                .then(function (resp) {
+                    document.getElementById("loadingArea").classList.add("hidden");
+                    if (resp.status !== 200) {
+                        showMsg(resp.data.message || "Failed to load users", "error");
+                        Logger.logApiError("/admin/users", resp.status, resp.data.message || "Failed to load users");
+                        return;
+                    }
+                    renderUsers(resp.data || []);
+                })
+                .catch(function (error) {
+                    document.getElementById("loadingArea").classList.add("hidden");
+                    if (error.message !== "Unauthorized") {
+                        showMsg("Network error while loading admin data.", "error");
+                        Logger.logApiError("/admin/users", 0, error.message);
+                    }
+                });
+        }
+
+        document.getElementById("headerUser").textContent =
+            (user.username || "-") + "  [" + role + "]";
+        Auth.initSessionWatch();
+
+        if (role !== "admin") {
+            showDeniedState();
+            return;
+        }
+
+        loadUsers();
+    })();
+</script>
+</body>
+</html>

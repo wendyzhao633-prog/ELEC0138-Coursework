@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student Grade Portal – Login</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card">
+        <div class="card-header">
+            <h1>Sign In</h1>
+            <p class="card-subtitle">Enter your university credentials to continue</p>
+        </div>
+
+        <!-- Error / success message -->
+        <div id="msg" class="alert"></div>
+
+        <form id="loginForm" novalidate>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username"
+                       placeholder="e.g. alice" autocomplete="username" />
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"
+                       placeholder="••••••••" autocomplete="current-password" />
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full" id="loginBtn">
+                Login
+            </button>
+        </form>
+
+        <!-- Demo hint – useful for coursework demo -->
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script>
+    // ----------------------------------------------------------------
+    // Login page logic
+    // ----------------------------------------------------------------
+
+    var form    = document.getElementById("loginForm");
+    var msgBox  = document.getElementById("msg");
+    var loginBtn = document.getElementById("loginBtn");
+
+    /** Show a styled alert message */
+    function showMsg(text, type) {
+        // type: "error" | "success" | "info"
+        msgBox.textContent = text;
+        msgBox.className = "alert alert-" + type + " show";
+    }
+
+    /** Hide the alert */
+    function hideMsg() {
+        msgBox.className = "alert";
+        msgBox.textContent = "";
+    }
+
+    /** Redirect away if already logged in */
+    (function checkAlreadyLoggedIn() {
+        var token = localStorage.getItem("token");
+        if (token) {
+            window.location.href = "/dashboard";
+        }
+    })();
+
+    /** Handle form submission */
+    form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        hideMsg();
+
+        var username = document.getElementById("username").value.trim();
+        var password = document.getElementById("password").value;
+
+        // Basic client-side validation
+        if (!username || !password) {
+            showMsg("Please enter both username and password.", "error");
+            Logger.logLoginFailure(username || "(empty)", "Empty fields");
+            return;
+        }
+
+        loginBtn.disabled = true;
+        loginBtn.textContent = "Signing in…";
+
+        // POST /login with JSON body
+        fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: username, password: password }),
+        })
+        .then(function (res) {
+            return res.json().then(function (data) {
+                return { status: res.status, data: data };
+            });
+        })
+        .then(function (resp) {
+            var data   = resp.data;
+            var status = resp.status;
+
+            if (data.success && data.token) {
+                // ── Persist auth state ──────────────────────────────
+                localStorage.setItem("token",      data.token);
+                localStorage.setItem("username",   data.user.username);
+                localStorage.setItem("role",       data.user.role);
+                if (data.user.student_id) {
+                    localStorage.setItem("student_id", data.user.student_id);
+                }
+                if (data.user.full_name) {
+                    localStorage.setItem("full_name", data.user.full_name);
+                }
+                if (data.user.email) {
+                    localStorage.setItem("email", data.user.email);
+                }
+
+                Logger.logLoginSuccess(username);
+                showMsg("Login successful! Redirecting…", "success");
+
+                setTimeout(function () {
+                    window.location.href = "/dashboard";
+                }, 600);
+
+            } else {
+                var reason = (data && data.message) ? data.message : "Login failed";
+                showMsg(reason, "error");
+                Logger.logLoginFailure(username, reason);
+                loginBtn.disabled = false;
+                loginBtn.textContent = "Login";
+            }
+        })
+        .catch(function (err) {
+            showMsg("Network error – unable to reach server.", "error");
+            Logger.logLoginFailure(username, "Network error: " + err.message);
+            loginBtn.disabled = false;
+            loginBtn.textContent = "Login";
+        });
+    });
+</script>
+</body>
+</html>

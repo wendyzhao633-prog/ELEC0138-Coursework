@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard – Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card medium">
+        <div class="card-header">
+            <h1>Dashboard</h1>
+            <p class="card-subtitle" id="welcomeText">Welcome back!</p>
+        </div>
+
+        <!-- User summary -->
+        <div class="info-grid" style="margin-bottom: 1.5rem;">
+            <span class="info-label">Username</span>
+            <span class="info-value" id="infoUsername">–</span>
+
+            <span class="info-label">Role</span>
+            <span class="info-value">
+                <span class="badge" id="roleBadge">–</span>
+            </span>
+
+            <span class="info-label">Student ID</span>
+            <span class="info-value" id="infoStudentId">–</span>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Navigation cards -->
+        <h3 style="margin-bottom: 0.75rem; color: #4a5568;">Quick Navigation</h3>
+        <div class="nav-cards">
+            <a class="nav-card" href="/profile-page">
+                <span class="nav-icon">&#x1F464;</span>
+                <span class="nav-label">My Profile</span>
+            </a>
+
+            <a class="nav-card" href="/results-page">
+                <span class="nav-icon">&#x1F4CA;</span>
+                <span class="nav-label">View Results</span>
+            </a>
+
+            <!-- Admin card – shown only if role === admin -->
+            <a class="nav-card" href="/admin-page" id="adminCard"
+               style="display:none; border-color:#fefcbf;">
+                <span class="nav-icon">&#x2699;&#xFE0F;</span>
+                <span class="nav-label" style="color:#744210;">Admin Panel</span>
+            </a>
+
+            <!-- Logout -->
+            <div class="nav-card danger" id="logoutCard">
+                <span class="nav-icon">&#x1F6AA;</span>
+                <span class="nav-label">Logout</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script>
+    // ----------------------------------------------------------------
+    // Dashboard page logic
+    // ----------------------------------------------------------------
+
+    /** Redirect to login, clearing auth state */
+    function redirectToLogin(reason) {
+        Logger.logTokenMissing("/dashboard");
+        if (reason) console.warn("[Dashboard] Redirecting to login:", reason);
+        localStorage.removeItem("token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("role");
+        localStorage.removeItem("student_id");
+        localStorage.removeItem("full_name");
+        localStorage.removeItem("email");
+        window.location.href = "/login";
+    }
+
+    (function init() {
+        var token    = localStorage.getItem("token");
+        var username = localStorage.getItem("username");
+        var role     = localStorage.getItem("role");
+        var sid      = localStorage.getItem("student_id");
+
+        // Guard – must be logged in
+        if (!token || !username) {
+            redirectToLogin("no token");
+            return;
+        }
+
+        // Log page visit
+        Logger.logPageVisit("Dashboard");
+
+        // Populate UI
+        document.getElementById("headerUser").textContent =
+            username + "  [" + (role || "?") + "]";
+
+        document.getElementById("welcomeText").textContent =
+            "Welcome back, " + (localStorage.getItem("full_name") || username) + "!";
+
+        document.getElementById("infoUsername").textContent  = username;
+        document.getElementById("infoStudentId").textContent = sid || "N/A";
+
+        var badge = document.getElementById("roleBadge");
+        badge.textContent  = role || "unknown";
+        badge.className    = "badge badge-" + (role || "student");
+
+        // Show admin nav card for admin users
+        if (role === "admin") {
+            document.getElementById("adminCard").style.display = "flex";
+        }
+    })();
+
+    // Logout handler
+    document.getElementById("logoutCard").addEventListener("click", function () {
+        var username = localStorage.getItem("username");
+        var token    = localStorage.getItem("token");
+
+        Logger.logLogout(username);
+
+        // Notify backend (fire-and-forget)
+        if (token) {
+            fetch("/logout", {
+                method:  "POST",
+                headers: {
+                    "Content-Type":  "application/json",
+                    "Authorization": "Bearer " + token,
+                },
+                keepalive: true,
+            }).catch(function () {});
+        }
+
+        // Clear local state and go back to login
+        localStorage.clear();
+        window.location.href = "/login";
+    });
+</script>
+</body>
+</html>

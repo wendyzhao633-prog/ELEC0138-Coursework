@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Results – Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card wide">
+        <div class="card-header">
+            <h1>Academic Results</h1>
+            <p class="card-subtitle" id="resultSubtitle">Loading your results…</p>
+        </div>
+
+        <!-- Alert area -->
+        <div id="msg" class="alert"></div>
+
+        <!-- Loading placeholder -->
+        <div id="loadingArea" class="loading">Fetching results…</div>
+
+        <!-- Results content (hidden until loaded) -->
+        <div id="resultsArea" style="display:none;">
+            <!-- Student summary -->
+            <div class="info-grid" style="margin-bottom: 1rem;">
+                <span class="info-label">Student Name</span>
+                <span class="info-value" id="rFullName">–</span>
+
+                <span class="info-label">Username</span>
+                <span class="info-value" id="rUsername">–</span>
+
+                <span class="info-label">Student ID</span>
+                <span class="info-value" id="rStudentId">–</span>
+            </div>
+
+            <hr class="divider" />
+
+            <!-- Grades table -->
+            <h3 style="margin-bottom: 0.5rem;">Module Grades</h3>
+            <div class="table-wrapper">
+                <table id="gradesTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Module Code</th>
+                            <th>Mark (%)</th>
+                            <th>Grade</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gradesBody">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty state message -->
+            <div id="noResults" style="display:none; text-align:center; padding:1.5rem; color:#718096;">
+                No results available for this student.
+            </div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 1.5rem;">
+            <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script>
+    // ----------------------------------------------------------------
+    // Auth helpers
+    // ----------------------------------------------------------------
+
+    function getAuthHeaders() {
+        var token = localStorage.getItem("token");
+        if (!token) return null;
+        return {
+            "Content-Type":  "application/json",
+            "Authorization": "Bearer " + token,
+        };
+    }
+
+    function redirectToLogin(reason) {
+        Logger.logTokenMissing("/results-page");
+        console.warn("[Results] Redirect to login:", reason);
+        localStorage.clear();
+        window.location.href = "/login";
+    }
+
+    function showMsg(text, type) {
+        var el = document.getElementById("msg");
+        el.textContent = text;
+        el.className = "alert alert-" + type + " show";
+    }
+
+    // ----------------------------------------------------------------
+    // Results page logic
+    // ----------------------------------------------------------------
+
+    /** Map a numeric mark to a CSS class for colouring */
+    function gradeClass(grade) {
+        if (!grade) return "";
+        var g = grade.charAt(0).toUpperCase();
+        var map = { "A": "grade-a", "B": "grade-b", "C": "grade-c", "D": "grade-d" };
+        return map[g] || "";
+    }
+
+    /** Render the results table from API response data */
+    function renderResults(data) {
+        document.getElementById("loadingArea").style.display = "none";
+        document.getElementById("resultsArea").style.display = "block";
+
+        document.getElementById("rFullName").textContent  = data.full_name  || data.username || "–";
+        document.getElementById("rUsername").textContent  = data.username   || "–";
+        document.getElementById("rStudentId").textContent = data.student_id || "–";
+
+        document.getElementById("resultSubtitle").textContent =
+            "Results for " + (data.full_name || data.username || "student");
+
+        var rows   = data.results || [];
+        var tbody  = document.getElementById("gradesBody");
+        tbody.innerHTML = "";
+
+        if (rows.length === 0) {
+            document.getElementById("noResults").style.display = "block";
+            document.getElementById("gradesTable").style.display = "none";
+            return;
+        }
+
+        rows.forEach(function (row, idx) {
+            var tr = document.createElement("tr");
+            tr.innerHTML =
+                "<td>" + (idx + 1) + "</td>" +
+                "<td><strong>" + (row.module || "–") + "</strong></td>" +
+                "<td>" + (row.mark !== undefined ? row.mark : "–") + "</td>" +
+                "<td class='" + gradeClass(row.grade) + "'>" + (row.grade || "–") + "</td>";
+            tbody.appendChild(tr);
+        });
+    }
+
+    (function init() {
+        var token      = localStorage.getItem("token");
+        var username   = localStorage.getItem("username");
+        var role       = localStorage.getItem("role");
+        var params     = new URLSearchParams(window.location.search);
+        var student_id = params.get("student_id") || localStorage.getItem("student_id");
+
+        if (!token || !username) {
+            redirectToLogin("no token");
+            return;
+        }
+
+        document.getElementById("headerUser").textContent =
+            username + "  [" + (role || "?") + "]";
+
+        Logger.logPageVisit("Results");
+
+        var headers = getAuthHeaders();
+
+        // Allow URL override first so the CW1 IDOR can be demonstrated
+        // directly by editing the address bar.
+        var url = student_id
+            ? "/results?student_id=" + encodeURIComponent(student_id)
+            : "/results";
+
+        fetch(url, { method: "GET", headers: headers })
+            .then(function (res) {
+                if (res.status === 401 || res.status === 403) {
+                    redirectToLogin("token rejected (" + res.status + ")");
+                    return null;
+                }
+                return res.json().then(function (data) {
+                    return { status: res.status, data: data };
+                });
+            })
+            .then(function (resp) {
+                if (!resp) return;
+
+                if (resp.status !== 200 || resp.data.success === false) {
+                    var errMsg = (resp.data && resp.data.message)
+                        ? resp.data.message
+                        : "Failed to load results";
+                    showMsg(errMsg, "error");
+                    document.getElementById("loadingArea").style.display = "none";
+                    Logger.logApiError(url, resp.status, errMsg);
+                    return;
+                }
+
+                renderResults(resp.data);
+            })
+            .catch(function (err) {
+                showMsg("Network error: " + err.message, "error");
+                document.getElementById("loadingArea").style.display = "none";
+                Logger.logApiError(url, 0, err.message);
+            });
+    })();
+</script>
+</body>
+</html>

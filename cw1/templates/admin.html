@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel – Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal – Admin</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card wide">
+
+        <!-- ── Access Denied (shown if not admin) ──────────────── -->
+        <div id="accessDeniedArea" style="display:none;">
+            <div class="access-denied">
+                <div class="denied-icon">&#x1F6AB;</div>
+                <h2>Access Denied</h2>
+                <p style="color:#718096; margin: 0.75rem 0 1.5rem;">
+                    You do not have permission to view this page.<br />
+                    Only administrators can access the Admin Panel.
+                </p>
+                <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+            </div>
+        </div>
+
+        <!-- ── Admin content (shown if admin) ──────────────────── -->
+        <div id="adminArea" style="display:none;">
+            <div class="card-header">
+                <h1>Admin Panel</h1>
+                <p class="card-subtitle">Manage all registered users</p>
+            </div>
+
+            <!-- Alert area -->
+            <div id="msg" class="alert"></div>
+
+            <!-- Loading placeholder -->
+            <div id="loadingArea" class="loading">Loading user list…</div>
+
+            <!-- Users table (hidden until loaded) -->
+            <div id="tableArea" style="display:none;">
+                <h3 style="margin-bottom: 0.5rem;">
+                    Registered Users
+                    <span id="userCount" style="font-weight:400; font-size:0.88rem; color:#718096;"></span>
+                </h3>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Full Name</th>
+                                <th>Email</th>
+                                <th>Student ID</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top: 1.5rem;">
+                <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script>
+    // ----------------------------------------------------------------
+    // Auth helpers
+    // ----------------------------------------------------------------
+
+    function getAuthHeaders() {
+        var token = localStorage.getItem("token");
+        if (!token) return null;
+        return {
+            "Content-Type":  "application/json",
+            "Authorization": "Bearer " + token,
+        };
+    }
+
+    function redirectToLogin(reason) {
+        Logger.logTokenMissing("/admin-page");
+        console.warn("[Admin] Redirect to login:", reason);
+        localStorage.clear();
+        window.location.href = "/login";
+    }
+
+    function showMsg(text, type) {
+        var el = document.getElementById("msg");
+        if (!el) return;
+        el.textContent = text;
+        el.className = "alert alert-" + type + " show";
+    }
+
+    // ----------------------------------------------------------------
+    // Admin page logic
+    // ----------------------------------------------------------------
+
+    (function init() {
+        var token    = localStorage.getItem("token");
+        var username = localStorage.getItem("username");
+        var role     = localStorage.getItem("role");
+
+        // ── Must be logged in ─────────────────────────────────────
+        if (!token || !username) {
+            redirectToLogin("no token");
+            return;
+        }
+
+        document.getElementById("headerUser").textContent =
+            username + "  [" + (role || "?") + "]";
+
+        // ── Role check ────────────────────────────────────────────
+        if (role !== "admin") {
+            // Log the failed attempt before showing the denial screen
+            Logger.logAdminAccessAttempt(username, false);
+
+            document.getElementById("accessDeniedArea").style.display = "block";
+            // Do NOT make any backend calls
+            return;
+        }
+
+        // Admin granted
+        Logger.logAdminAccessAttempt(username, true);
+        Logger.logPageVisit("Admin Panel");
+
+        document.getElementById("adminArea").style.display = "block";
+
+        // ── Fetch user list from backend ──────────────────────────
+        var headers = getAuthHeaders();
+
+        fetch("/admin/users", { method: "GET", headers: headers })
+            .then(function (res) {
+                if (res.status === 401 || res.status === 403) {
+                    redirectToLogin("token rejected (" + res.status + ")");
+                    return null;
+                }
+                return res.json().then(function (data) {
+                    return { status: res.status, data: data };
+                });
+            })
+            .then(function (resp) {
+                if (!resp) return;
+
+                document.getElementById("loadingArea").style.display = "none";
+
+                if (resp.status !== 200) {
+                    var errMsg = (resp.data && resp.data.message)
+                        ? resp.data.message
+                        : "Failed to load users";
+                    showMsg(errMsg, "error");
+                    Logger.logApiError("/admin/users", resp.status, errMsg);
+                    return;
+                }
+
+                renderUsers(resp.data);
+            })
+            .catch(function (err) {
+                document.getElementById("loadingArea").style.display = "none";
+                showMsg("Network error: " + err.message, "error");
+                Logger.logApiError("/admin/users", 0, err.message);
+            });
+    })();
+
+    /** Render user rows into the table */
+    function renderUsers(users) {
+        document.getElementById("tableArea").style.display = "block";
+        document.getElementById("userCount").textContent =
+            " (" + users.length + " total)";
+
+        var tbody = document.getElementById("usersBody");
+        tbody.innerHTML = "";
+
+        users.forEach(function (u) {
+            var roleCls = u.role === "admin" ? "badge-admin" : "badge-student";
+            var tr = document.createElement("tr");
+            tr.innerHTML =
+                "<td>" + (u.id || "–") + "</td>" +
+                "<td><strong>" + escHtml(u.username || "–") + "</strong></td>" +
+                "<td>" + escHtml(u.full_name  || "–") + "</td>" +
+                "<td>" + escHtml(u.email      || "–") + "</td>" +
+                "<td>" + escHtml(u.student_id || "N/A") + "</td>" +
+                "<td><span class='badge " + roleCls + "'>" + escHtml(u.role || "–") + "</span></td>";
+            tbody.appendChild(tr);
+        });
+    }
+
+    /** Minimal HTML escaping to prevent XSS in rendered table */
+    function escHtml(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+</script>
+</body>
+</html>

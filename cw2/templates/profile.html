@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile - Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card medium">
+        <div id="error-banner" class="alert"></div>
+
+        <div class="card-header">
+            <h1>My Profile</h1>
+            <p class="card-subtitle">Your personal information on record</p>
+        </div>
+
+        <div id="adminLookup" class="lookup-panel hidden">
+            <p>Administrator lookup: enter a student ID to inspect a specific record.</p>
+            <div class="lookup-form">
+                <div class="form-group">
+                    <label for="studentLookup">Student ID</label>
+                    <input id="studentLookup" type="text" placeholder="e.g. S001" />
+                </div>
+                <div class="lookup-actions">
+                    <button id="lookupBtn" class="btn btn-primary" type="button">Load Profile</button>
+                    <button id="loadSelfBtn" class="btn btn-secondary" type="button">Load My Record</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="msg" class="alert"></div>
+        <div id="loadingArea" class="loading">Loading profile...</div>
+
+        <div id="profileArea" class="hidden">
+            <div class="info-grid">
+                <span class="info-label">Username</span>
+                <span class="info-value" id="pUsername">-</span>
+
+                <span class="info-label">Full Name</span>
+                <span class="info-value" id="pFullName">-</span>
+
+                <span class="info-label">Email</span>
+                <span class="info-value" id="pEmail">-</span>
+
+                <span class="info-label">Student ID</span>
+                <span class="info-value" id="pStudentId">-</span>
+
+                <span class="info-label">Role</span>
+                <span class="info-value">
+                    <span class="badge" id="pRoleBadge">-</span>
+                </span>
+
+                <span class="info-label">Access Mode</span>
+                <span class="info-value" id="accessMode">Self</span>
+            </div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 1.5rem;">
+            <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script src="/static/auth.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        if (!Auth.requireAuth()) {
+            return;
+        }
+
+        var currentUser = Auth.getUser();
+        var role = currentUser.role || "student";
+        var profileArea = document.getElementById("profileArea");
+        var loadingArea = document.getElementById("loadingArea");
+        var msgBox = document.getElementById("msg");
+        var studentLookup = document.getElementById("studentLookup");
+
+        function showMsg(text, type) {
+            msgBox.textContent = text;
+            msgBox.className = "alert alert-" + (type || "info") + " show";
+        }
+
+        function hideMsg() {
+            msgBox.textContent = "";
+            msgBox.className = "alert";
+        }
+
+        function parseResponse(response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                return { status: response.status, data: data };
+            });
+        }
+
+        function renderProfile(data, accessMode) {
+            loadingArea.classList.add("hidden");
+            profileArea.classList.remove("hidden");
+            hideMsg();
+
+            document.getElementById("pUsername").textContent = data.username || "-";
+            document.getElementById("pFullName").textContent = data.full_name || "-";
+            document.getElementById("pEmail").textContent = data.email || "-";
+            document.getElementById("pStudentId").textContent = data.student_id || "N/A";
+            document.getElementById("accessMode").textContent = accessMode;
+
+            var badge = document.getElementById("pRoleBadge");
+            badge.textContent = data.role || "-";
+            badge.className = "badge badge-" + (data.role || "student");
+        }
+
+        function updateHeader() {
+            document.getElementById("headerUser").textContent =
+                (currentUser.username || "-") + "  [" + role + "]";
+            document.getElementById("adminLookup").classList.toggle("hidden", role !== "admin");
+        }
+
+        function setQuery(studentId) {
+            var nextUrl = studentId
+                ? ("/profile-page?student_id=" + encodeURIComponent(studentId))
+                : "/profile-page";
+            window.history.replaceState({}, "", nextUrl);
+        }
+
+        function fetchProfile(studentId) {
+            loadingArea.classList.remove("hidden");
+            profileArea.classList.add("hidden");
+            hideMsg();
+            Auth.hideBanner();
+
+            var url = studentId ? "/profile?student_id=" + encodeURIComponent(studentId) : "/profile";
+            var accessMode = studentId ? "Student query" : "Current user";
+
+            Auth.authFetch(url)
+                .then(parseResponse)
+                .then(function (resp) {
+                    if (resp.status !== 200 || resp.data.success === false) {
+                        loadingArea.classList.add("hidden");
+                        var message = resp.data.message || "Unable to load profile.";
+                        showMsg(message, resp.status === 403 ? "warning" : "error");
+                        Logger.logApiError(url, resp.status, message);
+                        return;
+                    }
+
+                    renderProfile(resp.data, accessMode);
+                    setQuery(studentId || "");
+                    if (role === "admin") {
+                        studentLookup.value = studentId || "";
+                    }
+                })
+                .catch(function (error) {
+                    if (error.message !== "Unauthorized") {
+                        loadingArea.classList.add("hidden");
+                        showMsg("Network error while loading the profile.", "error");
+                        Logger.logApiError(url, 0, error.message);
+                    }
+                });
+        }
+
+        document.getElementById("lookupBtn").addEventListener("click", function () {
+            var target = studentLookup.value.trim();
+            if (!target) {
+                showMsg("Enter a student ID to query.", "warning");
+                return;
+            }
+            fetchProfile(target);
+        });
+
+        document.getElementById("loadSelfBtn").addEventListener("click", function () {
+            fetchProfile("");
+        });
+
+        studentLookup.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                document.getElementById("lookupBtn").click();
+            }
+        });
+
+        Logger.logPageVisit("Profile");
+        Auth.initSessionWatch();
+        updateHeader();
+
+        var params = new window.URLSearchParams(window.location.search);
+        var queryStudentId = params.get("student_id");
+        fetchProfile(queryStudentId || "");
+    })();
+</script>
+</body>
+</html>

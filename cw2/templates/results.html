@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Results - Student Grade Portal</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+    <span class="brand">Student Grade Portal</span>
+    <span class="nav-user" id="headerUser"></span>
+</header>
+
+<div class="page-wrapper">
+    <div class="card wide">
+        <div id="error-banner" class="alert"></div>
+
+        <div class="card-header">
+            <h1>Academic Results</h1>
+            <p class="card-subtitle" id="resultSubtitle">Loading your results...</p>
+        </div>
+
+        <div id="adminLookup" class="lookup-panel hidden">
+            <p>Administrator lookup: enter a student ID to inspect a specific result set.</p>
+            <div class="lookup-form">
+                <div class="form-group">
+                    <label for="studentLookup">Student ID</label>
+                    <input id="studentLookup" type="text" placeholder="e.g. S001" />
+                </div>
+                <div class="lookup-actions">
+                    <button id="lookupBtn" class="btn btn-primary" type="button">Load Results</button>
+                    <button id="loadSelfBtn" class="btn btn-secondary" type="button">Load My Results</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="msg" class="alert"></div>
+        <div id="loadingArea" class="loading">Fetching results...</div>
+
+        <div id="resultsArea" class="hidden">
+            <div class="info-grid" style="margin-bottom: 1rem;">
+                <span class="info-label">Student Name</span>
+                <span class="info-value" id="rFullName">-</span>
+
+                <span class="info-label">Username</span>
+                <span class="info-value" id="rUsername">-</span>
+
+                <span class="info-label">Student ID</span>
+                <span class="info-value" id="rStudentId">-</span>
+
+                <span class="info-label">Records Returned</span>
+                <span class="info-value" id="resultCount">0</span>
+            </div>
+
+            <hr class="divider" />
+
+            <h3 style="margin-bottom: 0.5rem;">Module Grades</h3>
+            <div class="table-wrapper">
+                <table id="gradesTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Module Code</th>
+                            <th>Module Name</th>
+                            <th>Academic Year</th>
+                            <th>Mark (%)</th>
+                            <th>Grade</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gradesBody"></tbody>
+                </table>
+            </div>
+
+            <div id="noResults" class="hidden" style="text-align:center; padding:1.5rem; color:#718096;">
+                No results available for this student.
+            </div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 1.5rem;">
+            <a class="btn btn-outline" href="/dashboard">&#8592; Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script src="/static/logger.js"></script>
+<script src="/static/auth.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        if (!Auth.requireAuth()) {
+            return;
+        }
+
+        var currentUser = Auth.getUser();
+        var role = currentUser.role || "student";
+        var resultsArea = document.getElementById("resultsArea");
+        var loadingArea = document.getElementById("loadingArea");
+        var msgBox = document.getElementById("msg");
+        var studentLookup = document.getElementById("studentLookup");
+
+        function showMsg(text, type) {
+            msgBox.textContent = text;
+            msgBox.className = "alert alert-" + (type || "info") + " show";
+        }
+
+        function hideMsg() {
+            msgBox.textContent = "";
+            msgBox.className = "alert";
+        }
+
+        function parseResponse(response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                return { status: response.status, data: data };
+            });
+        }
+
+        function gradeClass(grade) {
+            var prefix = String(grade || "").trim().charAt(0).toUpperCase();
+            if (prefix === "A") return "grade-a";
+            if (prefix === "B") return "grade-b";
+            if (prefix === "C") return "grade-c";
+            if (prefix === "D") return "grade-d";
+            if (prefix === "F") return "grade-f";
+            return "";
+        }
+
+        function updateHeader() {
+            document.getElementById("headerUser").textContent =
+                (currentUser.username || "-") + "  [" + role + "]";
+            document.getElementById("adminLookup").classList.toggle("hidden", role !== "admin");
+        }
+
+        function setQuery(studentId) {
+            var nextUrl = studentId
+                ? ("/results-page?student_id=" + encodeURIComponent(studentId))
+                : "/results-page";
+            window.history.replaceState({}, "", nextUrl);
+        }
+
+        function renderResults(data) {
+            loadingArea.classList.add("hidden");
+            resultsArea.classList.remove("hidden");
+            hideMsg();
+
+            document.getElementById("rFullName").textContent = data.full_name || data.username || "-";
+            document.getElementById("rUsername").textContent = data.username || "-";
+            document.getElementById("rStudentId").textContent = data.student_id || "-";
+
+            var rows = data.results || [];
+            document.getElementById("resultCount").textContent = String(rows.length);
+            document.getElementById("resultSubtitle").textContent =
+                "Results for " + (data.full_name || data.username || "student");
+
+            var tbody = document.getElementById("gradesBody");
+            tbody.innerHTML = "";
+
+            if (!rows.length) {
+                document.getElementById("noResults").classList.remove("hidden");
+                document.getElementById("gradesTable").style.display = "none";
+                return;
+            }
+
+            document.getElementById("noResults").classList.add("hidden");
+            document.getElementById("gradesTable").style.display = "table";
+
+            rows.forEach(function (row, idx) {
+                var tr = document.createElement("tr");
+                tr.innerHTML =
+                    "<td>" + (idx + 1) + "</td>" +
+                    "<td><strong>" + (row.module_code || row.module || "-") + "</strong></td>" +
+                    "<td>" + (row.module_name || "-") + "</td>" +
+                    "<td>" + (row.academic_year || "-") + "</td>" +
+                    "<td>" + (row.mark !== undefined ? row.mark : "-") + "</td>" +
+                    "<td class='" + gradeClass(row.grade) + "'>" + (row.grade || "-") + "</td>";
+                tbody.appendChild(tr);
+            });
+        }
+
+        function fetchResults(studentId) {
+            loadingArea.classList.remove("hidden");
+            resultsArea.classList.add("hidden");
+            hideMsg();
+            Auth.hideBanner();
+
+            var url = studentId ? "/results?student_id=" + encodeURIComponent(studentId) : "/results";
+
+            Auth.authFetch(url)
+                .then(parseResponse)
+                .then(function (resp) {
+                    if (resp.status !== 200 || resp.data.success === false) {
+                        loadingArea.classList.add("hidden");
+                        var message = resp.data.message || "Unable to load results.";
+                        showMsg(message, resp.status === 403 ? "warning" : "error");
+                        Logger.logApiError(url, resp.status, message);
+                        return;
+                    }
+
+                    renderResults(resp.data);
+                    setQuery(studentId || "");
+                    if (role === "admin") {
+                        studentLookup.value = studentId || "";
+                    }
+                })
+                .catch(function (error) {
+                    if (error.message !== "Unauthorized") {
+                        loadingArea.classList.add("hidden");
+                        showMsg("Network error while loading results.", "error");
+                        Logger.logApiError(url, 0, error.message);
+                    }
+                });
+        }
+
+        document.getElementById("lookupBtn").addEventListener("click", function () {
+            var target = studentLookup.value.trim();
+            if (!target) {
+                showMsg("Enter a student ID to query.", "warning");
+                return;
+            }
+            fetchResults(target);
+        });
+
+        document.getElementById("loadSelfBtn").addEventListener("click", function () {
+            fetchResults("");
+        });
+
+        studentLookup.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                document.getElementById("lookupBtn").click();
+            }
+        });
+
+        Logger.logPageVisit("Results");
+        Auth.initSessionWatch();
+        updateHeader();
+
+        var params = new window.URLSearchParams(window.location.search);
+        var queryStudentId = params.get("student_id");
+        fetchResults(queryStudentId || "");
+    })();
+</script>
+</body>
+</html>
